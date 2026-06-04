@@ -1,0 +1,10 @@
+flask
+google-generativeai
+edge-tts
+openai-whisper
+yt-dlp
+python-dotenv
+requests
+numpy
+pillow
+moviepy==1.0.3

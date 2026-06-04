@@ -1,0 +1,25 @@
+# Virtual environment
+venv/
+ENV/
+env/
+.venv/
+
+# Environment variables / Credentials (API Keys)
+.env
+
+# Local Databases
+*.db
+generator.db
+
+# Project generated assets (temporary clips, voiceovers, final renders)
+projects_data/
+
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# OS specific files
+.DS_Store
+Thumbs.db

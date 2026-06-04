@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthetix - AI Script-to-Video Generator</title>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- CSS Style -->
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <!-- Background Glowing Orbs -->
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+    <div class="glow-orb orb-3"></div>
+
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i data-lucide="sparkles" class="brand-icon"></i>
+                <h2>Synthetix</h2>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-tab="dashboard">
+                    <i data-lucide="layout-dashboard"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="new-project">
+                    <i data-lucide="plus-circle"></i>
+                    <span>Create Video</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="settings">
+                    <i data-lucide="settings"></i>
+                    <span>Settings</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <span class="status-indicator online"></span>
+                <span>Local Server Connected</span>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- Dashboard View -->
+            <section id="dashboard-tab" class="tab-content active">
+                <div class="header-section">
+                    <div>
+                        <h1>Your Dashboard</h1>
+                        <p class="subtitle">Manage and preview all your AI-generated videos</p>
+                    </div>
+                    <button class="btn btn-primary btn-icon" onclick="switchTab('new-project')">
+                        <i data-lucide="plus"></i>
+                        <span>Create New Video</span>
+                    </button>
+                </div>
+
+                <!-- Empty State -->
+                <div id="empty-state" class="empty-state hidden">
+                    <div class="empty-icon">
+                        <i data-lucide="video-off"></i>
+                    </div>
+                    <h3>No Videos Created Yet</h3>
+                    <p>Enter a topic and let AI generate a stunning short or widescreen video in seconds.</p>
+                    <button class="btn btn-primary" onclick="switchTab('new-project')">Get Started</button>
+                </div>
+
+                <!-- Projects Grid -->
+                <div id="projects-grid" class="projects-grid">
+                    <!-- Dynamic Projects cards will go here -->
+                </div>
+            </section>
+
+            <!-- New/Edit Project View -->
+            <section id="new-project-tab" class="tab-content">
+                <!-- Step 1: New Project Settings -->
+                <div id="setup-form-container">
+                    <div class="header-section">
+                        <div>
+                            <h1>Create a Video</h1>
+                            <p class="subtitle">Enter a topic and style preferences to generate your video script</p>
+                        </div>
+                    </div>
+
+                    <div class="grid-2col">
+                        <!-- Input Configuration Card -->
+                        <div class="card glass-card animate-slide-in">
+                            <div class="card-header">
+                                <i data-lucide="text-quote" class="accent-magenta"></i>
+                                <h3>Describe Your Topic</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="project-title">Project Name</label>
+                                    <input type="text" id="project-title" placeholder="e.g., Space Exploration" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="project-prompt">What should the video be about?</label>
+                                    <textarea id="project-prompt" rows="5" placeholder="e.g., 3 mind-blowing facts about black holes and how they distort time..." required></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Settings Customization Card -->
+                        <div class="card glass-card animate-slide-in" style="animation-delay: 0.1s;">
+                            <div class="card-header">
+                                <i data-lucide="sliders" class="accent-cyan"></i>
+                                <h3>Video Settings</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Aspect Ratio</label>
+                                    <div class="radio-toggle">
+                                        <input type="radio" id="ratio-916" name="aspect-ratio" value="9:16" checked>
+                                        <label for="ratio-916"><i data-lucide="smartphone"></i> Shorts (9:16)</label>
+                                        
+                                        <input type="radio" id="ratio-169" name="aspect-ratio" value="16:9">
+                                        <label for="ratio-169"><i data-lucide="tv"></i> YouTube (16:9)</label>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Video Length</label>
+                                    <div class="length-selector-container" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                        <select id="duration-select" onchange="toggleCustomDuration()">
+                                            <option value="30">30 Seconds</option>
+                                            <option value="60" selected>60 Seconds (1 Min)</option>
+                                            <option value="120">120 Seconds (2 Min)</option>
+                                            <option value="custom">Custom Duration</option>
+                                        </select>
+                                        <div id="custom-duration-wrapper" class="hidden" style="display: flex; align-items: center; gap: 0.5rem; animation: fadeInUp 0.3s ease-out;">
+                                            <input type="number" id="custom-duration-input" min="15" max="600" value="45" style="padding: 0.85rem 1rem; width: 100px;">
+                                            <span style="font-size: 0.8rem; color: var(--text-secondary);">seconds (Min: 15s, Max: 600s)</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="voice-select">Narrator Voice</label>
+                                    <select id="voice-select">
+                                        <option value="en-US-AndrewNeural">English Male - Andrew</option>
+                                        <option value="en-US-EmmaNeural">English Female - Emma</option>
+                                        <option value="en-GB-SoniaNeural">British Female - Sonia</option>
+                                        <option value="en-IN-NeerjaNeural">Indian Female - Neerja</option>
+                                        <option value="en-IN-PrabhatNeural">Indian Male - Prabhat</option>
+                                        <option value="es-ES-AlvaroNeural">Spanish Male - Alvaro</option>
+                                        <option value="fr-FR-HenriNeural">French Male - Henri</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="subtitle-select">Subtitle Style</label>
+                                    <select id="subtitle-select">
+                                        <option value="MrBeast">MrBeast Style (Yellow, Bold Centered, High Energy)</option>
+                                        <option value="TikTok">TikTok Style (Dark Capsule Background)</option>
+                                        <option value="Minimalist">Minimalist Style (Clean Bottom Text)</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="bg-music-select">Background Music</label>
+                                    <select id="bg-music-select">
+                                        <option value="none">None (Narrator Only)</option>
+                                        <option value="chill_lofi.mp3">Chill Lofi Loop</option>
+                                        <option value="tense_suspense.mp3">Suspenseful / Dramatic Loop</option>
+                                        <option value="inspiring_epic.mp3">Epic Cinematic Loop</option>
+                                    </select>
+                                </div>
+
+                                <button class="btn btn-primary btn-full btn-glow" id="btn-create-project">
+                                    <span>Generate Storyboard</span>
+                                    <i data-lucide="arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Storyboard Editor View -->
+                <div id="storyboard-container" class="hidden">
+                    <div class="header-section">
+                        <div>
+                            <button class="btn btn-text" onclick="exitToSetup()"><i data-lucide="chevron-left"></i> Back to Setup</button>
+                            <h1 id="edit-project-title">Storyboard Editor</h1>
+                            <p class="subtitle">Fine-tune the script narration and select/search matching clips.</p>
+                        </div>
+                        <button class="btn btn-success btn-glow btn-icon" id="btn-render-video">
+                            <i data-lucide="clapperboard"></i>
+                            <span>Render Video</span>
+                        </button>
+                    </div>
+
+                    <div class="grid-layout">
+                        <!-- Timeline Editor (Left) -->
+                        <div class="storyboard-timeline">
+                            <div class="timeline-header">
+                                <h3>Scenes Board</h3>
+                                <span class="badge" id="scene-count-badge">0 Scenes</span>
+                            </div>
+                            <div id="scenes-list" class="scenes-list">
+                                <!-- Dynamic Scene cards will go here -->
+                            </div>
+                        </div>
+
+                        <!-- Config Preview Sidebar (Right) -->
+                        <div class="preview-sidebar">
+                            <div class="card glass-card sticky-sidebar">
+                                <div class="card-header">
+                                    <i data-lucide="eye" class="accent-cyan"></i>
+                                    <h3>Project Settings</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="param-group">
+                                        <span class="param-label">Aspect Ratio:</span>
+                                        <span class="param-value" id="preview-ratio">9:16</span>
+                                    </div>
+                                    <div class="param-group">
+                                        <span class="param-label">Voice:</span>
+                                        <span class="param-value" id="preview-voice">Andrew</span>
+                                    </div>
+                                    <div class="param-group">
+                                        <span class="param-label">Subtitles:</span>
+                                        <span class="param-value" id="preview-subtitles">MrBeast</span>
+                                    </div>
+                                    <div class="param-group">
+                                        <span class="param-label">Music:</span>
+                                        <span class="param-value" id="preview-music">None</span>
+                                    </div>
+
+                                    <hr class="divider">
+
+                                    <div class="form-group">
+                                        <label for="volume-voice">Voice Volume</label>
+                                        <input type="range" id="volume-voice" min="0" max="1" step="0.1" value="1.0">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="volume-music">Music Volume</label>
+                                        <input type="range" id="volume-music" min="0" max="0.5" step="0.05" value="0.1">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Rendering & Preview View -->
+                <div id="rendering-container" class="hidden">
+                    <div class="card glass-card render-card text-center max-w-600 margin-auto animate-zoom-in">
+                        <div class="render-loader">
+                            <div class="spinner-ring"></div>
+                            <i data-lucide="cpu" class="loader-center-icon"></i>
+                        </div>
+                        <h2 id="render-status-heading">Creating Your Masterpiece</h2>
+                        <p class="subtitle" id="render-status-msg">Initializing files...</p>
+                        
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" id="render-progress-fill" style="width: 10%;"></div>
+                        </div>
+                        
+                        <div class="console-box" id="render-console-logs">
+                            <p class="log-info">Starting rendering engine...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Final Output View -->
+                <div id="output-container" class="hidden">
+                    <div class="header-section text-center">
+                        <div>
+                            <h1>Your Video is Ready!</h1>
+                            <p class="subtitle">Check out the rendered video below and export it to social media.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="video-preview-layout max-w-600 margin-auto animate-fade-in">
+                        <div class="card glass-card video-card">
+                            <div class="video-wrapper aspect-vertical" id="video-player-wrapper">
+                                <video id="final-video-player" controls preload="auto">
+                                    <source src="" type="video/mp4">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                            <div class="card-footer grid-2col" style="margin-top: 1.5rem;">
+                                <a href="" id="btn-download-video" class="btn btn-primary btn-icon" download>
+                                    <i data-lucide="download"></i>
+                                    <span>Download Video</span>
+                                </a>
+                                <button class="btn btn-secondary btn-icon" onclick="switchTab('dashboard')">
+                                    <i data-lucide="arrow-left"></i>
+                                    <span>Back to Dashboard</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Tab -->
+            <section id="settings-tab" class="tab-content">
+                <div class="header-section">
+                    <div>
+                        <h1>Configuration & API Keys</h1>
+                        <p class="subtitle">Connect the external accounts needed for video assets and narration</p>
+                    </div>
+                </div>
+
+                <div class="card glass-card max-w-600 animate-slide-in">
+                    <div class="card-header">
+                        <i data-lucide="key" class="accent-magenta"></i>
+                        <h3>API Configuration</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="settings-gemini-key">Google Gemini API Key</label>
+                            <input type="password" id="settings-gemini-key" placeholder="Enter Gemini API key...">
+                            <p class="field-hint">Used to write scripts and visual prompts. Get it for free at Google AI Studio.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="settings-pexels-key">Pexels API Key</label>
+                            <input type="password" id="settings-pexels-key" placeholder="Enter Pexels API key...">
+                            <p class="field-hint">Used for copyright-free stock video clips. Get it for free on Pexels Developer Portal.</p>
+                        </div>
+
+                        <button class="btn btn-primary btn-glow btn-icon" id="btn-save-settings">
+                            <i data-lucide="save"></i>
+                            <span>Save Settings</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Media Search & Replace Modal -->
+    <div id="media-modal" class="modal hidden">
+        <div class="modal-backdrop" onclick="closeMediaModal()"></div>
+        <div class="modal-content glass-card animate-zoom-in">
+            <div class="modal-header">
+                <h3>Search and Replace Video</h3>
+                <button class="btn-close" onclick="closeMediaModal()"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="search-bar-row">
+                    <input type="text" id="modal-media-search-input" placeholder="Search stock videos (e.g. galaxy space, running cat)...">
+                    <button class="btn btn-primary" id="btn-modal-media-search">Search</button>
+                </div>
+                <div id="modal-media-results" class="media-results-grid">
+                    <!-- Search result grids will load here -->
+                    <div class="text-center pad-2">Type keywords and click Search to load clips.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Notification system -->
+    <div id="notification-toast" class="toast hidden">
+        <i data-lucide="info" id="toast-icon"></i>
+        <span id="toast-msg">Notification Message</span>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
