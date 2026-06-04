@@ -37,8 +37,8 @@ def crop_to_aspect_ratio(clip, target_ratio="9:16"):
             y1 = (h - target_h) // 2
             y2 = y1 + target_h
             cropped = clip.crop(x1=0, y1=y1, x2=w, y2=y2)
-        # Resize to standard mobile (1080x1920 or scaled down 540x960 for speed)
-        return cropped.resize(newsize=(540, 960))
+        # Resize to standard mobile Full HD (1080x1920)
+        return cropped.resize(newsize=(1080, 1920))
         
     else:  # "16:9"
         # Target aspect ratio is 16/9 = 1.777
@@ -54,8 +54,8 @@ def crop_to_aspect_ratio(clip, target_ratio="9:16"):
             x1 = (w - target_w) // 2
             x2 = x1 + target_w
             cropped = clip.crop(x1=x1, y1=0, x2=x2, y2=h)
-        # Resize to standard widescreen (960x540 for speed and local rendering)
-        return cropped.resize(newsize=(960, 540))
+        # Resize to standard widescreen Full HD (1920x1080)
+        return cropped.resize(newsize=(1920, 1080))
 
 def generate_ass_subtitles(words, subtitle_style="MrBeast", aspect_ratio="9:16"):
     """
@@ -63,7 +63,20 @@ def generate_ass_subtitles(words, subtitle_style="MrBeast", aspect_ratio="9:16")
     ASS subtitles support rich styling, margins, and center alignment.
     """
     font_name = "Arial Black" if subtitle_style == "MrBeast" else "Arial"
-    font_size = 28 if subtitle_style == "MrBeast" else (22 if subtitle_style == "TikTok" else 18)
+    
+    # Scale canvas size and styles based on target aspect ratio (1080p canvas)
+    if aspect_ratio == "9:16":
+        play_res_x = 1080
+        play_res_y = 1920
+        font_size = 56 if subtitle_style == "MrBeast" else (44 if subtitle_style == "TikTok" else 36)
+        margin_v = "120"
+        outline_thickness = "6" if subtitle_style == "MrBeast" else "2"
+    else:  # "16:9"
+        play_res_x = 1920
+        play_res_y = 1080
+        font_size = 56 if subtitle_style == "MrBeast" else (44 if subtitle_style == "TikTok" else 36)
+        margin_v = "100"
+        outline_thickness = "6" if subtitle_style == "MrBeast" else "2"
     
     # Colors in Hex ABGR format (Alpha Blue Green Red)
     primary_color = "&H0000FFFF" if subtitle_style == "MrBeast" else "&H00FFFFFF"  # Yellow vs White
@@ -71,18 +84,14 @@ def generate_ass_subtitles(words, subtitle_style="MrBeast", aspect_ratio="9:16")
     back_color = "&H80000000" if subtitle_style == "TikTok" else "&H00000000"  # Translucent black capsule vs none
     
     border_style = "3" if subtitle_style == "TikTok" else "1"  # 3 = opaque box, 1 = outline + shadow
-    outline_thickness = "3" if subtitle_style == "MrBeast" else "1"
     
     # Screen alignment: 2 = Centered Bottom (standard subtitle position)
     alignment = "2"
     
-    # Margin vertical adjustments (offset from bottom)
-    margin_v = "60"
-    
     ass_template = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: 540
-PlayResY: 960
+PlayResX: {play_res_x}
+PlayResY: {play_res_y}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -234,14 +243,15 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
         # 4. Render intermediate video (without subtitles)
         temp_rendered_path = dest_output_path.replace(".mp4", "_temp.mp4")
         
-        # Render settings optimized for local CPU
+        # Render settings optimized for high-quality Full HD output
         final_video.write_videofile(
             temp_rendered_path,
             fps=24,
             codec='libx264',
             audio_codec='aac',
+            bitrate='8000k',
             remove_temp=True,
-            preset='ultrafast',  # ultra fast encoding
+            preset='fast',  # fast encoding for better H.264 compression/quality balance
             threads=4
         )
         
