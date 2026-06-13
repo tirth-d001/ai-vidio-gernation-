@@ -402,36 +402,70 @@ def render_project_worker(project_id):
         # Step 3: Get audio word timestamps for captions
         render_progress[project_id] = "Analyzing speech timestamps..."
         all_words = []
-        elapsed_audio_time = 0.0
         
         # Determine voice language
         if project['voice'].startswith("cvoice:"):
             voice_lang = "Hindi" if project['voice'].endswith("_hi") else "English"
         else:
             voice_lang = "Hindi" if project['voice'].startswith("hi-") else "English"
-            
+
+        # Pre-calculate total scene duration to compute subtitle timeline scaling factor
+        total_scene_duration = 0.0
+        scene_durations = []
         for scene in scenes:
-            # Force Whisper to use the correct language to avoid script hallucinations (e.g. Urdu)
-            whisper_lang = "hi" if voice_lang == "Hindi" else "en"
-            words = api.transcribe_audio_to_words(scene['voiceover_path'], language=whisper_lang)
-            # Adjust word timestamps to fit the global timeline
-            for w in words:
-                w['start'] += elapsed_audio_time
-                w['end'] += elapsed_audio_time
-                all_words.append(w)
-                
-            # Get duration of this scene audio
-            # Using MoviePy to read duration
+            vo_path = scene.get('voiceover_path')
+            if vo_path and os.path.exists(vo_path):
+                from moviepy.editor import AudioFileClip
+                try:
+                    audio = AudioFileClip(vo_path)
+                    dur = audio.duration
+                    audio.close()
+                    scene_dur = dur + 0.3
+                except Exception as e:
+                    print(f"Error reading audio duration for scaling in app: {e}")
+                    scene_dur = 5.0
+            else:
+                scene_dur = 5.0
+            scene_durations.append(scene_dur)
+            total_scene_duration += scene_dur
+
+        visual_scale_factor = 1.0
+        if target_duration and total_scene_duration > 0:
+            if total_scene_duration < target_duration:
+                visual_scale_factor = target_duration / total_scene_duration
+                print(f"Subtitles: Target {target_duration}s > Narration {total_scene_duration:.2f}s. Visual scale factor: {visual_scale_factor:.3f}x")
+
+        # Batch transliterate all scene scripts if language is Hindi to avoid rate limits
+        hinglish_texts = []
+        if voice_lang == "Hindi":
+            render_progress[project_id] = "Transliterating all scripts to Hinglish in batch..."
+            raw_texts = [s.get('text') or "" for s in scenes]
+            hinglish_texts = api.transliterate_scenes_to_hinglish(raw_texts)
+
+        elapsed_visual_time = 0.0
+        for idx, scene in enumerate(scenes):
             from moviepy.editor import AudioFileClip
             audio = AudioFileClip(scene['voiceover_path'])
-            # Add the 0.3s scene pause to keep subtitles synchronized
-            elapsed_audio_time += audio.duration + 0.3
+            audio_duration = audio.duration
             audio.close()
             
-        # Transliterate Devanagari words to Hinglish for Hindi audio narration
-        if voice_lang == "Hindi" and all_words:
-            render_progress[project_id] = "Transliterating captions to Romanized Hindi..."
-            all_words = api.transliterate_words_to_hinglish(all_words)
+            script_text = scene['text'] or ""
+            if voice_lang == "Hindi":
+                if idx < len(hinglish_texts):
+                    script_text = hinglish_texts[idx]
+                else:
+                    render_progress[project_id] = f"Transliterating Scene {scene['sequence']} script..."
+                    script_text = api.transliterate_text_to_hinglish(script_text)
+                
+            words = api.align_words_to_duration(script_text, audio_duration)
+            
+            for w in words:
+                w['start'] += elapsed_visual_time
+                w['end'] += elapsed_visual_time
+                all_words.append(w)
+                
+            base_scene_dur = scene_durations[idx]
+            elapsed_visual_time += base_scene_dur * visual_scale_factor
             
         # Write ASS Subtitle File
         render_progress[project_id] = "Generating styled subtitles..."

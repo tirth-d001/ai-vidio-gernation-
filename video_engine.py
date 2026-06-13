@@ -160,12 +160,37 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
     video_clips = []
     audio_clips = []
     
-    current_time = 0.0
+    # Pre-calculate total scene duration based on voiceover audio files
+    total_scene_duration = 0.0
+    scene_durations = []
+    for scene in scenes:
+        vo_path = scene.get('voiceover_path')
+        if vo_path and os.path.exists(vo_path):
+            try:
+                vo_audio = AudioFileClip(vo_path)
+                dur = vo_audio.duration
+                vo_audio.close()
+                scene_dur = dur + 0.3
+            except Exception as e:
+                print(f"Error reading voiceover {vo_path}: {e}")
+                scene_dur = 5.0
+        else:
+            scene_dur = 5.0
+        scene_durations.append(scene_dur)
+        total_scene_duration += scene_dur
+
+    visual_scale_factor = 1.0
+    if target_duration and total_scene_duration > 0:
+        if total_scene_duration < target_duration:
+            visual_scale_factor = target_duration / total_scene_duration
+            print(f"Narrations ({total_scene_duration:.2f}s) are shorter than target ({target_duration}s). Visual scale factor: {visual_scale_factor:.3f}x")
+
+    current_visual_time = 0.0
     scene_clips_to_close = []
     
     try:
         # 1. Process each scene
-        for scene in scenes:
+        for idx, scene in enumerate(scenes):
             video_path = scene['video_path']
             voiceover_path = scene['voiceover_path']
             
@@ -178,13 +203,14 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
                 
             # Load voiceover and video
             voice_audio = AudioFileClip(voiceover_path)
-            duration = voice_audio.duration
+            voice_duration = voice_audio.duration
             
             # Smooth fadeout to prevent abrupt robotic cuts
             voice_audio = voice_audio.audio_fadeout(0.1)
             
-            # Add a small natural pause (0.3s) at the end of each scene
-            scene_duration = duration + 0.3
+            # Scaled visual duration for this scene
+            base_scene_duration = scene_durations[idx]
+            visual_duration = base_scene_duration * visual_scale_factor
             
             # Load video clip
             vid_clip = VideoFileClip(video_path)
@@ -192,20 +218,17 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
             # Adjust video clip duration
             is_youtube = scene.get('video_source') == 'youtube'
             
-            if vid_clip.duration < scene_duration:
+            if vid_clip.duration < visual_duration:
                 # If too short, loop it
-                n_loops = math.ceil(scene_duration / vid_clip.duration)
-                # Simple loop concatenation
-                vid_clip = concatenate_videoclips([vid_clip] * n_loops).subclip(0, scene_duration)
+                n_loops = math.ceil(visual_duration / vid_clip.duration)
+                vid_clip = concatenate_videoclips([vid_clip] * n_loops).subclip(0, visual_duration)
             else:
-                # Trim to match scene duration
+                # Trim to match visual duration
                 if is_youtube:
-                    # Skip first 5 seconds of the video to bypass common YouTube intros, 
-                    # but only if there is enough footage remaining.
-                    start_offset = max(0.0, min(5.0, vid_clip.duration - scene_duration))
-                    vid_clip = vid_clip.subclip(start_offset, start_offset + scene_duration)
+                    start_offset = max(0.0, min(5.0, vid_clip.duration - visual_duration))
+                    vid_clip = vid_clip.subclip(start_offset, start_offset + visual_duration)
                 else:
-                    vid_clip = vid_clip.subclip(0, scene_duration)
+                    vid_clip = vid_clip.subclip(0, visual_duration)
                 
             # Apply crop and aspect ratio resize
             vid_clip = crop_to_aspect_ratio(vid_clip, aspect_ratio)
@@ -217,14 +240,14 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
             # Mute the original video clip audio completely
             vid_clip = vid_clip.set_audio(None)
             
-            # Position voiceover audio at the scene timeline start
-            voice_audio = voice_audio.set_start(current_time)
+            # Position voiceover audio at the scene visual timeline start
+            voice_audio = voice_audio.set_start(current_visual_time)
             
             video_clips.append(vid_clip)
             audio_clips.append(voice_audio)
             
-            # Track current timeline head
-            current_time += scene_duration
+            # Track current visual timeline head
+            current_visual_time += visual_duration
             
         if not video_clips:
             raise ValueError("No valid video scenes to assemble.")

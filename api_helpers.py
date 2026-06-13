@@ -15,6 +15,22 @@ genai_api_key = os.getenv("GEMINI_API_KEY")
 if genai_api_key:
     genai.configure(api_key=genai_api_key)
 
+def generate_content_with_fallback(prompt, request_options=None, model_name='gemini-2.5-flash'):
+    if request_options is None:
+        request_options = {}
+    try:
+        model = genai.GenerativeModel(model_name)
+        return model.generate_content(prompt, request_options=request_options)
+    except Exception as e:
+        print(f"Warning: generate_content failed with model '{model_name}': {e}. Falling back to 'gemini-flash-latest'...")
+        try:
+            model = genai.GenerativeModel('gemini-flash-latest')
+            return model.generate_content(prompt, request_options=request_options)
+        except Exception as fallback_err:
+            print(f"Error: Fallback to 'gemini-flash-latest' also failed: {fallback_err}")
+            raise e
+
+
 # Whisper Model (Lazy loaded when needed to save memory)
 _whisper_model = None
 
@@ -54,27 +70,40 @@ def generate_script_and_keywords(topic, duration="Short", tone="Informative", la
     words_per_scene = int(total_words / num_scenes)
     
     prompt = f"""
-    Write a viral video script about the topic: "{topic}".
+    You are a professional, high-retention viral video scriptwriter and researcher for YouTube, Instagram Reels, and TikTok.
+    Write an engaging, deeply researched video script about the topic: "{topic}".
     Tone: {tone}
     Language: {language}
-    
+
+    First, identify the GENRE of the topic:
+    - If it is a Story/Fiction/Drama: Apply narrative pacing, build character tension, introduce suspenseful beats, and build to a dramatic climax or twist at the end.
+    - If it is a Historical Documentary: Act as a lead historian. Incorporate specific historical figures, exact dates, quotes, statistics, hidden secrets, and the dramatic turning points of the event.
+    - If it is Current Affairs/News: Outline the context, the core conflict or public controversy, key entities involved, and analytical discussion hooks.
+    - If it is Informative/Educational/Tech: Focus on mind-blowing facts, debunk common myths, use relatable analogies, and explain complex concepts simply.
+
+    Apply the following HIGH-RETENTION SCRIPT framework:
+    - Scene 1 (The Hook): Grab attention instantly (first 3-5 seconds). Start with a bold claim, a shocking fact, or a mystery. Do NOT write greetings like "Welcome to my video" or "Hey guys". Direct and punchy.
+    - Scenes 2 to {num_scenes - 1} (The Body & Retention Beats): Build suspense or curiosity loops. Advance the story or information using highly researched details, specific names, dates, or quotes (no generic summaries). Keep the viewer wanting to know what happens next.
+    - Scene {num_scenes} (The Climax & CTA/Loop): Resolve the story or deliver the key takeaway, followed by a strong call-to-action or a loop hook.
+
     CRITICAL STRUCTURE RULES:
     - You MUST generate EXACTLY {num_scenes} scenes. No more, no less.
     - Each scene's narration text must contain approximately {words_per_scene} words (between {words_per_scene - 3} and {words_per_scene + 3} words).
     - The total script across all scenes should sum up to approximately {total_words} words.
+    - Narration style must be conversational, punchy, and sound like a natural speaking creator (avoid passive voice).
     - Structure the script into a chronological sequence of scenes.
-    
+
     For each scene, provide:
     1. The narration text (what the voiceover says, translated to {language}).
     2. A short, punchy visual search query (in English, maximum 3-5 words) suitable for finding stock videos or YouTube videos (e.g., "slow motion space", "hands typing keyboard").
-    
+
     CRITICAL VISUAL SEARCH QUERY RULES:
     - ALWAYS request real-world, authentic footage (no animations, cartoons, drawings, or vector graphics).
     - Keep the query extremely short and focused (maximum 3 to 5 words). Long sentences confuse search engines.
     - Include key subject terms related to the script topic (e.g., if the topic is Spider-Man, include "spider man" in the queries like "spider man cosplay", "spider man web shooter", "spider man parkour").
     - For fictional, comic, or movie-related topics, use descriptors like "cosplay", "real life", "props", or "diy build" to help locate real-world representations rather than cartoons or 3D animations.
     - The visual query must describe real-world objects, people, scenes, or actions. Avoid abstract concepts or abstract loop backgrounds.
-    
+
     Return ONLY a valid JSON array of objects, with no markdown formatting wrappers, like this:
     [
       {{
@@ -85,8 +114,7 @@ def generate_script_and_keywords(topic, duration="Short", tone="Informative", la
     ]
     """
     
-    model = genai.GenerativeModel('gemini-2.5-flash')
-    response = model.generate_content(prompt, request_options={"timeout": 60})
+    response = generate_content_with_fallback(prompt, request_options={"timeout": 60})
     
     # Clean output in case markdown code blocks are wrapped around the JSON
     text = response.text.strip()
@@ -259,8 +287,7 @@ def transliterate_words_to_hinglish(words):
     {json.dumps(word_strs, ensure_ascii=False)}
     """
     try:
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        response = model.generate_content(prompt, request_options={"timeout": 30})
+        response = generate_content_with_fallback(prompt, request_options={"timeout": 30})
         
         # Clean response markdown wrappers if any
         text = response.text.strip()
@@ -282,6 +309,151 @@ def transliterate_words_to_hinglish(words):
         print("Failed to transliterate words to Hinglish:", e)
         
     return words
+
+def offline_devanagari_to_hinglish(text):
+    """
+    Phonetically transliterates Devanagari Hindi text to Romanized Hinglish offline.
+    Used as a robust fallback when Gemini API limits are exceeded.
+    """
+    mapping = {
+        'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo', 'ऋ': 'ri', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au',
+        'ा': 'aa', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo', 'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au',
+        'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'n',
+        'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'n',
+        'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+        'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+        'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+        'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v', 'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+        'ं': 'n', 'ँ': 'n', 'ः': 'h', '्': '',
+        'ज्ञ': 'gy', 'त्र': 'tr', 'क्ष': 'ksh',
+        '।': '.'
+    }
+    
+    result = []
+    consonants = set('कखगघङचछजझञटठडढणतथदधनपफबभमयरलवशषसह')
+    
+    i = 0
+    while i < len(text):
+        char = text[i]
+        
+        if i < len(text) - 1 and text[i:i+2] in ['ज्ञ', 'त्र', 'क्ष']:
+            result.append(mapping[text[i:i+2]])
+            i += 2
+            continue
+            
+        if char in mapping:
+            val = mapping[char]
+            result.append(val)
+            
+            if char in consonants:
+                if i + 1 < len(text):
+                    next_char = text[i+1]
+                    if next_char in consonants:
+                        result.append('a')
+        else:
+            result.append(char)
+        i += 1
+        
+    return "".join(result)
+
+def transliterate_text_to_hinglish(text):
+    """
+    Transliterates a full sentence of Hindi Devanagari text into Hinglish using Gemini.
+    """
+    if not text:
+        return ""
+    
+    prompt = f"""
+    You are a precise transliterator from Hindi Devanagari to Romanized Hindi (Hinglish).
+    Transliterate the following Hindi text into its phonetic Hinglish equivalent (using English/Latin characters, informal conversational spelling). 
+    Do NOT translate the meaning, only transliterate the sounds phonetically.
+    Return ONLY the transliterated text. Do not wrap in markdown or add explanations.
+
+    Input: {text}
+    """
+    try:
+        response = generate_content_with_fallback(prompt, request_options={"timeout": 20})
+        transliterated = response.text.strip()
+        print(f"Transliterated text: -> '{transliterated}'")
+        return transliterated
+    except Exception as e:
+        print(f"Failed to transliterate text to Hinglish:", e)
+        return offline_devanagari_to_hinglish(text)
+
+def transliterate_scenes_to_hinglish(texts):
+    """
+    Transliterates a list of Hindi Devanagari sentences to Hinglish in a single Gemini API request.
+    This avoids hitting API rate limits for videos with many scenes.
+    """
+    if not texts:
+        return []
+        
+    prompt = f"""
+    You are a precise transliterator from Hindi Devanagari to Romanized Hindi (Hinglish).
+    Transliterate the following list of Hindi sentences into their phonetic Hinglish equivalents (using English/Latin characters, informal conversational spelling). 
+    Do NOT translate the meaning, only transliterate the sounds phonetically.
+    Preserve the exact order and list size.
+    Return ONLY a valid JSON array of strings matching the inputs.
+
+    Input:
+    {json.dumps(texts, ensure_ascii=False)}
+    """
+    try:
+        response = generate_content_with_fallback(prompt, request_options={"timeout": 30})
+        
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+        transliterated_list = json.loads(text)
+        if len(transliterated_list) == len(texts):
+            print("Successfully batch transliterated scenes to Hinglish!")
+            return transliterated_list
+        else:
+            print(f"Warning: Batch transliteration size mismatch ({len(transliterated_list)} vs {len(texts)}).")
+    except Exception as e:
+        print("Failed to batch transliterate scenes to Hinglish:", e)
+        
+    # Fallback to individual transliteration if batch failed
+    print("Falling back to individual scene transliteration...")
+    results = []
+    for t in texts:
+        results.append(transliterate_text_to_hinglish(t))
+    return results
+
+def align_words_to_duration(text, audio_duration):
+    """
+    Cleans and splits text into individual words, then assigns start/end timestamps
+    proportional to the character length of each word over the total audio duration.
+    Format: [{'word': 'hello', 'start': 0.1, 'end': 0.5}, ...]
+    """
+    raw_words = text.split()
+    if not raw_words or audio_duration <= 0:
+        return []
+    
+    lengths = [len(w) for w in raw_words]
+    total_len = sum(lengths)
+    
+    if total_len == 0:
+        word_dur = audio_duration / len(raw_words)
+        durations = [word_dur] * len(raw_words)
+    else:
+        durations = [(l / total_len) * audio_duration for l in lengths]
+    
+    words_list = []
+    current_time = 0.0
+    for word, dur in zip(raw_words, durations):
+        words_list.append({
+            'word': word.strip(),
+            'start': round(current_time, 3),
+            'end': round(current_time + dur, 3)
+        })
+        current_time += dur
+        
+    return words_list
 
 def clean_search_query(query):
     """
