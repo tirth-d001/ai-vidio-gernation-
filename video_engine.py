@@ -180,10 +180,6 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
         total_scene_duration += scene_dur
 
     visual_scale_factor = 1.0
-    if target_duration and total_scene_duration > 0:
-        if total_scene_duration < target_duration:
-            visual_scale_factor = target_duration / total_scene_duration
-            print(f"Narrations ({total_scene_duration:.2f}s) are shorter than target ({target_duration}s). Visual scale factor: {visual_scale_factor:.3f}x")
 
     current_visual_time = 0.0
     scene_clips_to_close = []
@@ -208,9 +204,16 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
             # Smooth fadeout to prevent abrupt robotic cuts
             voice_audio = voice_audio.audio_fadeout(0.1)
             
-            # Scaled visual duration for this scene
+            # Natural visual duration for this scene
             base_scene_duration = scene_durations[idx]
-            visual_duration = base_scene_duration * visual_scale_factor
+            visual_duration = base_scene_duration
+            
+            # For the last scene, extend the visual duration to cover target_duration if needed
+            if target_duration and idx == len(scenes) - 1:
+                remaining_time = target_duration - current_visual_time
+                if remaining_time > visual_duration:
+                    print(f"Extending last scene visual duration from {visual_duration:.2f}s to {remaining_time:.2f}s to fill target duration.")
+                    visual_duration = remaining_time
             
             # Load video clip
             vid_clip = VideoFileClip(video_path)
@@ -278,24 +281,15 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
         final_audio = CompositeAudioClip(final_audio_tracks)
         final_video = final_video.set_audio(final_audio)
         
-        # 3.5. Adjust total duration to match target_duration exactly (if target_duration is specified)
+        # 3.5. Ensure total duration matches target_duration exactly (if target_duration is specified)
         if target_duration:
             current_dur = final_video.duration
-            # Calculate speed factor
-            speed_factor = current_dur / target_duration
-            # Only apply speed adjustment if it's within a reasonable range (e.g., 0.8x to 1.25x) to avoid distortion
-            if 0.8 <= speed_factor <= 1.25:
-                # To match target_duration, we slow down/speed up by passing speed_factor (current_dur / target_duration) to speedx
-                print(f"Adjusting final video speed to {speed_factor:.2f}x to match target duration of {target_duration}s...")
-                final_video = final_video.speedx(speed_factor)
-            else:
-                # If it's too different, just trim or pad it
-                if current_dur > target_duration:
-                    print(f"Trimming final video from {current_dur:.2f}s to {target_duration}s...")
-                    final_video = final_video.subclip(0, target_duration)
-                else:
-                    print(f"Padding final video from {current_dur:.2f}s to {target_duration}s...")
-                    final_video = final_video.set_duration(target_duration)
+            if current_dur > target_duration:
+                print(f"Trimming final video from {current_dur:.2f}s to {target_duration}s...")
+                final_video = final_video.subclip(0, target_duration)
+            elif current_dur < target_duration:
+                print(f"Padding final video from {current_dur:.2f}s to {target_duration}s...")
+                final_video = final_video.set_duration(target_duration)
         
         # 4. Render intermediate video (without subtitles)
         temp_rendered_path = dest_output_path.replace(".mp4", "_temp.mp4")

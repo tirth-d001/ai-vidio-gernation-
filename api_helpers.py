@@ -62,9 +62,8 @@ def generate_script_and_keywords(topic, duration="Short", tone="Informative", la
     # Enforce limits (Min: 15s, Max: 600s) on backend
     seconds = max(15, min(600, seconds))
     
-    # Calculate word limit and scenes
-    # Average narration speed is ~2.25 words per second
-    total_words = int(seconds * 2.25)
+    # Average narration speed is ~2.85 words per second
+    total_words = int(seconds * 2.85)
     # Target average scene duration is 7.5 seconds
     num_scenes = max(3, round(seconds / 7.5))
     words_per_scene = int(total_words / num_scenes)
@@ -114,23 +113,41 @@ def generate_script_and_keywords(topic, duration="Short", tone="Informative", la
     ]
     """
     
-    response = generate_content_with_fallback(prompt, request_options={"timeout": 60})
-    
-    # Clean output in case markdown code blocks are wrapped around the JSON
-    text = response.text.strip()
-    if text.startswith("```json"):
-        text = text[7:]
-    if text.endswith("```"):
-        text = text[:-3]
-    text = text.strip()
-    
-    try:
-        scenes = json.loads(text)
-        return scenes
-    except json.JSONDecodeError as e:
-        # Fallback formatting parser if JSON parse fails
-        print("Failed to parse JSON from Gemini response, raw response:", text)
-        raise ValueError("AI returned invalid structure. Please try again.") from e
+    for attempt in range(3):
+        try:
+            response = generate_content_with_fallback(prompt, request_options={"timeout": 60})
+            
+            # Clean output in case markdown code blocks are wrapped around the JSON
+            text = response.text.strip()
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+            
+            scenes = json.loads(text)
+            if not isinstance(scenes, list):
+                raise ValueError("Response is not a JSON list")
+            
+            # Verify word count
+            total_gen_words = sum(len([w for w in scene.get('text', '').split() if w.strip()]) for scene in scenes)
+            target_min_words = int(total_words * 0.92)
+            
+            if total_gen_words >= target_min_words:
+                print(f"Script verification passed! Total words generated: {total_gen_words} (Target: {total_words}, Min: {target_min_words})")
+                return scenes
+            else:
+                print(f"Attempt {attempt + 1}: Generated script is too short ({total_gen_words} words, target min: {target_min_words}). Retrying/Expanding...")
+                prompt += f"\n\nCRITICAL WARNING: In your previous response, you only generated {total_gen_words} words. The required total duration demands at least {target_min_words} words. You MUST write longer, more detailed narration for each scene. Ensure each scene is expanded with rich, detailed content to hit the minimum word count."
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed: {e}")
+            if attempt == 2:
+                # If we've run out of attempts, try standard parsing fallback or raise
+                try:
+                    scenes = json.loads(text)
+                    return scenes
+                except Exception:
+                    raise ValueError("AI returned invalid structure or timing verification failed. Please try again.") from e
 
 # 2. Edge-TTS & cvoice.ai Audio Generation
 def generate_cvoice_voiceover(text, voice_id, api_key, output_path):

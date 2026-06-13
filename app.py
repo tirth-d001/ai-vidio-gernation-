@@ -430,10 +430,6 @@ def render_project_worker(project_id):
             total_scene_duration += scene_dur
 
         visual_scale_factor = 1.0
-        if target_duration and total_scene_duration > 0:
-            if total_scene_duration < target_duration:
-                visual_scale_factor = target_duration / total_scene_duration
-                print(f"Subtitles: Target {target_duration}s > Narration {total_scene_duration:.2f}s. Visual scale factor: {visual_scale_factor:.3f}x")
 
         # Batch transliterate all scene scripts if language is Hindi to avoid rate limits
         hinglish_texts = []
@@ -465,7 +461,7 @@ def render_project_worker(project_id):
                 all_words.append(w)
                 
             base_scene_dur = scene_durations[idx]
-            elapsed_visual_time += base_scene_dur * visual_scale_factor
+            elapsed_visual_time += base_scene_dur
             
         # Write ASS Subtitle File
         render_progress[project_id] = "Generating styled subtitles..."
