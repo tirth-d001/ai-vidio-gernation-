@@ -143,16 +143,24 @@
                                 </div>
 
                                 <div class="form-group">
-                                    <label for="voice-select">Narrator Voice</label>
-                                    <select id="voice-select">
-                                        <option value="en-US-AndrewNeural">English Male - Andrew</option>
-                                        <option value="en-US-EmmaNeural">English Female - Emma</option>
-                                        <option value="en-GB-SoniaNeural">British Female - Sonia</option>
-                                        <option value="en-IN-NeerjaNeural">Indian Female - Neerja</option>
-                                        <option value="en-IN-PrabhatNeural">Indian Male - Prabhat</option>
-                                        <option value="es-ES-AlvaroNeural">Spanish Male - Alvaro</option>
-                                        <option value="fr-FR-HenriNeural">French Male - Henri</option>
+                                    <label for="language-select">Script & Voice Language</label>
+                                    <select id="language-select" onchange="updateVoiceOptions()">
+                                        <option value="en" selected>English</option>
+                                        <option value="hi">Hindi (हिन्दी)</option>
                                     </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="voice-select">Narrator Voice</label>
+                                    <select id="voice-select" onchange="toggleCustomVoiceWrapper()">
+                                        <!-- Will be populated dynamically based on language selection -->
+                                    </select>
+                                </div>
+
+                                <div id="cvoice-custom-voice-wrapper" class="form-group hidden" style="animation: fadeInUp 0.3s ease-out;">
+                                    <label for="cvoice-custom-voice-id">cvoice.ai Voice ID</label>
+                                    <input type="text" id="cvoice-custom-voice-id" placeholder="e.g. 00a77add-48d0-4088-b16b-695e5bd0fb73">
+                                    <p class="field-hint">Copy and paste any Voice ID from cvoice.ai</p>
                                 </div>
 
                                 <div class="form-group">
@@ -171,6 +179,14 @@
                                         <option value="chill_lofi.mp3">Chill Lofi Loop</option>
                                         <option value="tense_suspense.mp3">Suspenseful / Dramatic Loop</option>
                                         <option value="inspiring_epic.mp3">Epic Cinematic Loop</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="visual-source-select">Visual Footage Source</label>
+                                    <select id="visual-source-select">
+                                        <option value="pexels" selected>Pexels Stock Library (Copyright-Safe)</option>
+                                        <option value="youtube">YouTube Search (Movie, TV, & Real Scenes)</option>
                                     </select>
                                 </div>
 
@@ -233,7 +249,11 @@
                                         <span class="param-label">Music:</span>
                                         <span class="param-value" id="preview-music">None</span>
                                     </div>
-
+                                    <div class="param-group">
+                                        <span class="param-label">Footage Source:</span>
+                                        <span class="param-value" id="preview-source">Pexels</span>
+                                    </div>
+                                    
                                     <hr class="divider">
 
                                     <div class="form-group">
@@ -243,6 +263,14 @@
                                     <div class="form-group">
                                         <label for="volume-music">Music Volume</label>
                                         <input type="range" id="volume-music" min="0" max="0.5" step="0.05" value="0.1">
+                                    </div>
+                                    <hr class="divider">
+                                    <div class="form-group" style="margin-top: 1rem;">
+                                        <button class="btn btn-secondary btn-full btn-icon" id="btn-clear-temp-clips" style="border-color: rgba(255, 0, 127, 0.3); color: var(--accent-magenta);">
+                                            <i data-lucide="trash-2"></i>
+                                            <span>Clear Raw Clips Cache</span>
+                                        </button>
+                                        <p class="field-hint" style="margin-top: 0.5rem; text-align: center;">Deletes downloaded source videos & voiceovers to save space, but keeps final video.</p>
                                     </div>
                                 </div>
                             </div>
@@ -297,6 +325,12 @@
                                     <span>Back to Dashboard</span>
                                 </button>
                             </div>
+                            <div style="margin-top: 1.2rem; text-align: center; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 1rem;">
+                                <button class="btn btn-text btn-icon" id="btn-output-clear-temp-clips" style="color: var(--accent-magenta); font-size: 0.85rem; width: auto; display: inline-flex; justify-content: center; align-items: center; gap: 0.5rem;">
+                                    <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                                    <span>Clear Raw Clips to Save Space</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -327,6 +361,12 @@
                             <label for="settings-pexels-key">Pexels API Key</label>
                             <input type="password" id="settings-pexels-key" placeholder="Enter Pexels API key...">
                             <p class="field-hint">Used for copyright-free stock video clips. Get it for free on Pexels Developer Portal.</p>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="settings-cvoice-key">cvoice.ai API Key</label>
+                            <input type="password" id="settings-cvoice-key" placeholder="Enter cvoice.ai API key...">
+                            <p class="field-hint">Used for free premium character voices. Get it from your cvoice.ai dashboard.</p>
                         </div>
 
                         <button class="btn btn-primary btn-glow btn-icon" id="btn-save-settings">

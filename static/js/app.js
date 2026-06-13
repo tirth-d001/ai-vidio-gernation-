@@ -30,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings);
     document.getElementById('btn-render-video').addEventListener('click', handleRenderVideo);
     document.getElementById('btn-modal-media-search').addEventListener('click', handleModalMediaSearch);
+    document.getElementById('btn-clear-temp-clips').addEventListener('click', () => handleClearTempClips(currentProjectId));
+    document.getElementById('btn-output-clear-temp-clips').addEventListener('click', () => handleClearTempClips(currentProjectId));
     
     // Media Search keyboard trigger
     document.getElementById('modal-media-search-input').addEventListener('keypress', (e) => {
@@ -39,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load initial data
     loadConfig();
     loadProjects();
+    updateVoiceOptions();
     initializeCustomSelects();
 });
 
@@ -110,6 +113,7 @@ async function loadConfig() {
         
         const geminiInput = document.getElementById('settings-gemini-key');
         const pexelsInput = document.getElementById('settings-pexels-key');
+        const cvoiceInput = document.getElementById('settings-cvoice-key');
         
         if (data.gemini_key) {
             geminiInput.value = data.gemini_key.substring(0, 6) + '••••••••••••••••';
@@ -126,6 +130,14 @@ async function loadConfig() {
             pexelsInput.value = '';
             pexelsInput.placeholder = 'Enter Pexels API key...';
         }
+
+        if (data.cvoice_key) {
+            cvoiceInput.value = data.cvoice_key.substring(0, 6) + '••••••••••••••••';
+            cvoiceInput.placeholder = 'Key configured (Saved)';
+        } else {
+            cvoiceInput.value = '';
+            cvoiceInput.placeholder = 'Enter cvoice.ai API key...';
+        }
     } catch (e) {
         console.error('Failed to load settings config', e);
     }
@@ -135,6 +147,7 @@ async function loadConfig() {
 async function handleSaveSettings() {
     const geminiValue = document.getElementById('settings-gemini-key').value.trim();
     const pexelsValue = document.getElementById('settings-pexels-key').value.trim();
+    const cvoiceValue = document.getElementById('settings-cvoice-key').value.trim();
     
     const bodyData = {};
     
@@ -149,6 +162,12 @@ async function handleSaveSettings() {
         bodyData.pexels_key = pexelsValue;
     } else if (pexelsValue === '') {
         bodyData.pexels_key = ''; // Explicitly clear it if empty
+    }
+
+    if (cvoiceValue && !cvoiceValue.includes('••••')) {
+        bodyData.cvoice_key = cvoiceValue;
+    } else if (cvoiceValue === '') {
+        bodyData.cvoice_key = ''; // Explicitly clear it if empty
     }
     
     // If nothing changed, just show success toast and exit
@@ -245,6 +264,13 @@ function resetSetupForm() {
     document.getElementById('project-prompt').value = '';
     document.getElementById('ratio-916').checked = true;
     
+    // Reset video language
+    const languageSelect = document.getElementById('language-select');
+    if (languageSelect) {
+        languageSelect.value = 'en';
+        languageSelect.dispatchEvent(new Event('change'));
+    }
+    
     // Reset video length
     const durationSelect = document.getElementById('duration-select');
     if (durationSelect) {
@@ -255,6 +281,12 @@ function resetSetupForm() {
     if (customWrapper) customWrapper.classList.add('hidden');
     const customInput = document.getElementById('custom-duration-input');
     if (customInput) customInput.value = '45';
+    
+    // Reset cvoice custom Voice ID
+    const cvoiceInput = document.getElementById('cvoice-custom-voice-id');
+    if (cvoiceInput) cvoiceInput.value = '';
+    const cvoiceWrapper = document.getElementById('cvoice-custom-voice-wrapper');
+    if (cvoiceWrapper) cvoiceWrapper.classList.add('hidden');
     
     const voiceSelect = document.getElementById('voice-select');
     if (voiceSelect) {
@@ -270,6 +302,11 @@ function resetSetupForm() {
     if (bgMusicSelect) {
         bgMusicSelect.selectedIndex = 0;
         bgMusicSelect.dispatchEvent(new Event('change'));
+    }
+    const visualSourceSelect = document.getElementById('visual-source-select');
+    if (visualSourceSelect) {
+        visualSourceSelect.value = 'pexels';
+        visualSourceSelect.dispatchEvent(new Event('change'));
     }
     
     document.getElementById('setup-form-container').classList.remove('hidden');
@@ -321,9 +358,27 @@ async function handleCreateProject() {
         duration = String(customVal);
     }
     
-    const voice = document.getElementById('voice-select').value;
+    let voice = document.getElementById('voice-select').value;
+    if (voice === 'cvoice_custom') {
+        const customVoiceId = document.getElementById('cvoice-custom-voice-id').value.trim();
+        if (!customVoiceId) {
+            showToast('Please enter a custom cvoice.ai Voice ID first.', 'error');
+            return;
+        }
+        
+        // Also check if cvoice API key is set
+        if (!configData.cvoice_key) {
+            showToast('Please enter your cvoice.ai API Key in settings first.', 'error');
+            switchTab('settings');
+            return;
+        }
+        
+        const lang = document.getElementById('language-select').value;
+        voice = 'cvoice:' + customVoiceId + '_' + lang;
+    }
     const subtitle_style = document.getElementById('subtitle-select').value;
     const bg_music = document.getElementById('bg-music-select').value;
+    const visual_source = document.getElementById('visual-source-select').value;
     
     showToast('Creating project record...');
     
@@ -332,7 +387,7 @@ async function handleCreateProject() {
         const createRes = await fetch('/api/projects', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music })
+            body: JSON.stringify({ title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music, visual_source })
         });
         const project = await createRes.json();
         currentProjectId = project.id;
@@ -377,9 +432,14 @@ async function openProject(projectId) {
         // Populate view parameters first
         document.getElementById('edit-project-title').textContent = `Storyboard: ${project.title}`;
         document.getElementById('preview-ratio').textContent = project.aspect_ratio;
-        document.getElementById('preview-voice').textContent = project.voice.split('-')[2] || project.voice;
+        if (project.voice.startsWith('cvoice:')) {
+            document.getElementById('preview-voice').textContent = 'cvoice.ai';
+        } else {
+            document.getElementById('preview-voice').textContent = project.voice.split('-')[2] || project.voice;
+        }
         document.getElementById('preview-subtitles').textContent = project.subtitle_style;
         document.getElementById('preview-music').textContent = project.bg_music === 'none' ? 'None' : project.bg_music;
+        document.getElementById('preview-source').textContent = project.visual_source === 'pexels' ? 'Pexels' : 'YouTube';
         
         document.getElementById('volume-voice').value = project.voice_volume;
         document.getElementById('volume-music').value = project.bg_music_volume;
@@ -794,5 +854,78 @@ function initializeCustomSelects() {
             w.classList.remove('open');
         });
     });
+}
+
+// Dynamic voice options catalog
+const voiceData = {
+    en: [
+        { value: "en-US-AndrewNeural", text: "English Male (US) - Andrew" },
+        { value: "en-US-EmmaNeural", text: "English Female (US) - Emma" },
+        { value: "en-US-BrianNeural", text: "English Male (US) - Brian" },
+        { value: "en-US-JennyNeural", text: "English Female (US) - Jenny" },
+        { value: "en-GB-SoniaNeural", text: "English Female (UK) - Sonia" },
+        { value: "en-GB-RyanNeural", text: "English Male (UK) - Ryan" },
+        { value: "en-IN-NeerjaNeural", text: "English Female (India) - Neerja" },
+        { value: "en-IN-PrabhatNeural", text: "English Male (India) - Prabhat" },
+        { value: "en-AU-NatashaNeural", text: "English Female (Australia) - Natasha" },
+        { value: "en-CA-LiamNeural", text: "English Male (Canada) - Liam" },
+        { value: "cvoice_custom", text: "Custom cvoice.ai Voice (Free)" }
+    ],
+    hi: [
+        { value: "hi-IN-SwaraNeural", text: "Hindi Female (India) - Swara" },
+        { value: "hi-IN-MadhurNeural", text: "Hindi Male (India) - Madhur" },
+        { value: "cvoice_custom", text: "Custom cvoice.ai Voice (Free)" }
+    ]
+};
+
+function updateVoiceOptions() {
+    const langSelect = document.getElementById('language-select');
+    const voiceSelect = document.getElementById('voice-select');
+    if (!langSelect || !voiceSelect) return;
+    
+    const lang = langSelect.value;
+    const voices = voiceData[lang] || [];
+    
+    voiceSelect.innerHTML = '';
+    voices.forEach(voice => {
+        const opt = document.createElement('option');
+        opt.value = voice.value;
+        opt.textContent = voice.text;
+        voiceSelect.appendChild(opt);
+    });
+    
+    voiceSelect.selectedIndex = 0;
+    voiceSelect.dispatchEvent(new Event('change'));
+}
+
+function toggleCustomVoiceWrapper() {
+    const select = document.getElementById('voice-select');
+    const wrapper = document.getElementById('cvoice-custom-voice-wrapper');
+    if (!select || !wrapper) return;
+    
+    if (select.value === 'cvoice_custom') {
+        wrapper.classList.remove('hidden');
+    } else {
+        wrapper.classList.add('hidden');
+    }
+}
+
+async function handleClearTempClips(projectId) {
+    if (!projectId) return;
+    const confirmClear = confirm("Are you sure you want to delete all downloaded raw videos and voiceover clips for this project? This will save storage space. The final output video will NOT be deleted.");
+    if (!confirmClear) return;
+    
+    try {
+        const response = await fetch(`/api/projects/${projectId}/clear-clips`, { method: 'POST' });
+        const result = await response.json();
+        if (result.status === 'success') {
+            showToast(result.message);
+            openProject(projectId);
+        } else {
+            showToast(result.error || 'Failed to clear clips', 'error');
+        }
+    } catch (e) {
+        showToast('Error connecting to server', 'error');
+    }
 }
 

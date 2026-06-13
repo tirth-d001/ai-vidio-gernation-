@@ -26,6 +26,7 @@ def init_db():
             bg_music TEXT DEFAULT 'none',
             bg_music_volume REAL DEFAULT 0.1,
             voice_volume REAL DEFAULT 1.0,
+            visual_source TEXT DEFAULT 'pexels',
             status TEXT DEFAULT 'Draft',
             error_message TEXT,
             video_path TEXT,
@@ -33,6 +34,12 @@ def init_db():
             updated_at TEXT
         )
     ''')
+    
+    # Try adding visual_source column to projects if it doesn't exist (migration)
+    try:
+        cursor.execute("ALTER TABLE projects ADD COLUMN visual_source TEXT DEFAULT 'pexels'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     
     # Scenes table
     cursor.execute('''
@@ -55,14 +62,14 @@ def init_db():
     conn.commit()
     conn.close()
 
-def create_project(title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music):
+def create_project(title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music, visual_source='pexels'):
     conn = get_db_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     cursor.execute('''
-        INSERT INTO projects (title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music, now, now))
+        INSERT INTO projects (title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music, visual_source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (title, prompt, aspect_ratio, duration, voice, subtitle_style, bg_music, visual_source, now, now))
     project_id = cursor.lastrowid
     conn.commit()
     conn.close()

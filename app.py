@@ -32,9 +32,13 @@ def get_project_dir(project_id):
 # Download default royalty-free tracks on startup
 def download_default_bgm():
     tracks = {
-        'tense_suspense.mp3': 'https://upload.wikimedia.org/wikipedia/commons/2/23/Epic_Suspense_Music_by_FesliyanStudios.mp3',
-        'chill_lofi.mp3': 'https://upload.wikimedia.org/wikipedia/commons/d/df/Morning_Routine_Lofi.mp3',
-        'inspiring_epic.mp3': 'https://upload.wikimedia.org/wikipedia/commons/e/ec/Epic_Inspirational_Cinematic_by_FesliyanStudios.mp3'
+        'tense_suspense.mp3': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
+        'chill_lofi.mp3': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+        'inspiring_epic.mp3': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3'
+    }
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
     for filename, url in tracks.items():
@@ -42,10 +46,13 @@ def download_default_bgm():
         if not os.path.exists(dest):
             print(f"Downloading default BGM track {filename}...")
             try:
-                r = requests.get(url, timeout=20)
+                r = requests.get(url, headers=headers, timeout=20)
                 if r.status_code == 200:
                     with open(dest, 'wb') as f:
                         f.write(r.content)
+                    print(f"Successfully downloaded {filename}")
+                else:
+                    print(f"Failed to download default BGM {filename}: Status {r.status_code}")
             except Exception as e:
                 print(f"Failed to download default BGM {filename}:", e)
 
@@ -60,9 +67,11 @@ def handle_config():
         data = request.json or {}
         existing_gemini = os.getenv('GEMINI_API_KEY', '')
         existing_pexels = os.getenv('PEXELS_API_KEY', '')
+        existing_cvoice = os.getenv('CVOICE_API_KEY', '')
         
         gemini_key = data.get('gemini_key', existing_gemini) if 'gemini_key' in data else existing_gemini
         pexels_key = data.get('pexels_key', existing_pexels) if 'pexels_key' in data else existing_pexels
+        cvoice_key = data.get('cvoice_key', existing_cvoice) if 'cvoice_key' in data else existing_cvoice
         
         # Write to .env file
         env_lines = []
@@ -73,6 +82,7 @@ def handle_config():
         new_lines = []
         gemini_written = False
         pexels_written = False
+        cvoice_written = False
         
         for line in env_lines:
             if line.startswith('GEMINI_API_KEY='):
@@ -81,6 +91,9 @@ def handle_config():
             elif line.startswith('PEXELS_API_KEY='):
                 new_lines.append(f'PEXELS_API_KEY={pexels_key}\n')
                 pexels_written = True
+            elif line.startswith('CVOICE_API_KEY='):
+                new_lines.append(f'CVOICE_API_KEY={cvoice_key}\n')
+                cvoice_written = True
             else:
                 new_lines.append(line)
                 
@@ -88,6 +101,8 @@ def handle_config():
             new_lines.append(f'GEMINI_API_KEY={gemini_key}\n')
         if not pexels_written:
             new_lines.append(f'PEXELS_API_KEY={pexels_key}\n')
+        if not cvoice_written:
+            new_lines.append(f'CVOICE_API_KEY={cvoice_key}\n')
             
         with open('.env', 'w') as f:
             f.writelines(new_lines)
@@ -95,13 +110,15 @@ def handle_config():
         # Re-apply env config
         os.environ['GEMINI_API_KEY'] = gemini_key
         os.environ['PEXELS_API_KEY'] = pexels_key
+        os.environ['CVOICE_API_KEY'] = cvoice_key
         api.genai.configure(api_key=gemini_key)
         
         return jsonify({'status': 'success', 'message': 'Configuration updated successfully'})
     
     return jsonify({
         'gemini_key': os.getenv('GEMINI_API_KEY', ''),
-        'pexels_key': os.getenv('PEXELS_API_KEY', '')
+        'pexels_key': os.getenv('PEXELS_API_KEY', ''),
+        'cvoice_key': os.getenv('CVOICE_API_KEY', '')
     })
 
 # --- PROJECTS CRUD API ---
@@ -121,6 +138,7 @@ def create_project():
     voice = data.get('voice', 'en-US-AndrewNeural')
     subtitle_style = data.get('subtitle_style', 'MrBeast')
     bg_music = data.get('bg_music', 'none')
+    visual_source = data.get('visual_source', 'pexels')
     
     project_id = db.create_project(
         title=title,
@@ -129,7 +147,8 @@ def create_project():
         duration=duration,
         voice=voice,
         subtitle_style=subtitle_style,
-        bg_music=bg_music
+        bg_music=bg_music,
+        visual_source=visual_source
     )
     
     # Initialize directory structure
@@ -186,19 +205,24 @@ def generate_script(project_id):
     if not project:
         return jsonify({'error': 'Project not found'}), 404
         
-    db.update_project(project_id, status='Generating Script')
+    db.update_project(project_id, status='Generating Script', error_message=None)
     
     try:
         # Determine language/tone defaults
-        # We can extract from metadata or support extra fields
         tone = "Dramatic" if "mystery" in project['prompt'].lower() or "scary" in project['prompt'].lower() else "Informative"
+        
+        # Determine script language from selected project voice prefix or custom suffix
+        if project['voice'].startswith("cvoice:"):
+            voice_lang = "Hindi" if project['voice'].endswith("_hi") else "English"
+        else:
+            voice_lang = "Hindi" if project['voice'].startswith("hi-") else "English"
         
         # Call Gemini AI
         scenes_data = api.generate_script_and_keywords(
             topic=project['prompt'],
             duration=project['duration'],
             tone=tone,
-            language="English"
+            language=voice_lang
         )
         
         # Clear existing scenes if any
@@ -272,8 +296,17 @@ def render_project_worker(project_id):
     project = db.get_project(project_id)
     scenes = db.get_scenes(project_id)
     
+    target_duration = None
+    try:
+        target_duration = float(project['duration'])
+    except ValueError:
+        if project['duration'] == "Short":
+            target_duration = 30.0
+        elif project['duration'] == "Long":
+            target_duration = 120.0
+            
     render_progress[project_id] = "Setting up assets..."
-    db.update_project(project_id, status='Rendering')
+    db.update_project(project_id, status='Rendering', error_message=None)
     
     try:
         # Step 1: Generate speech voiceovers
@@ -289,32 +322,79 @@ def render_project_worker(project_id):
         # Step 2: Fetch and Download visual clips
         render_progress[project_id] = "Downloading Scene Videos..."
         orientation = "portrait" if project and project.get('aspect_ratio') == "9:16" else "landscape"
+        visual_source = project.get('visual_source', 'pexels')
+        
         for idx, scene in enumerate(scenes):
             clip_path = os.path.join(p_dir, 'clips', f'scene_{scene["sequence"]}.mp4')
+            video_source = scene.get('video_source') or visual_source
+            video_url = scene.get('video_url')
             
             # If user hasn't selected a specific video_url, search and auto-download first result
-            video_url = scene.get('video_url')
+            success = False
             if not video_url:
-                # Search Pexels automatically with orientation filter
-                results = api.search_pexels_videos(scene['visual_query'], orientation=orientation)
-                if results:
-                    video_url = results[0]['url']
-                    db.update_scene(scene['id'], video_url=video_url, video_source='pexels')
+                if video_source == 'youtube':
+                    render_progress[project_id] = f"Searching & downloading YouTube video for Scene {scene['sequence']}..."
+                    try:
+                        youtube_url = api.download_youtube_clip_sync(scene['visual_query'], clip_path, aspect_ratio=project['aspect_ratio'])
+                        db.update_scene(scene['id'], video_url=youtube_url, video_path=clip_path, video_source='youtube')
+                        video_url = youtube_url
+                        success = True
+                    except Exception as e:
+                        print(f"Failed YouTube download for Scene {scene['sequence']}: {e}")
+                else:
+                    # Search Pexels automatically with orientation filter
+                    render_progress[project_id] = f"Searching Pexels video for Scene {scene['sequence']}..."
+                    results = api.search_pexels_videos(scene['visual_query'], orientation=orientation)
+                    if results:
+                        video_url = results[0]['url']
+                        db.update_scene(scene['id'], video_url=video_url, video_source='pexels')
+                        
+            # If we have a video_url, download it if not already present
+            if video_url and not success:
+                if not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
+                    if video_source == 'youtube':
+                        render_progress[project_id] = f"Downloading YouTube video for Scene {scene['sequence']}..."
+                        try:
+                            api.download_youtube_clip_sync(video_url, clip_path, aspect_ratio=project['aspect_ratio'])
+                            success = True
+                        except Exception as e:
+                            print(f"Failed to download YouTube URL {video_url}: {e}")
+                    else:
+                        render_progress[project_id] = f"Downloading video for Scene {scene['sequence']}..."
+                        if api.download_video_clip(video_url, clip_path):
+                            success = True
+                else:
+                    success = True
                     
-            if video_url:
-                render_progress[project_id] = f"Downloading video for Scene {scene['sequence']}..."
-                api.download_video_clip(video_url, clip_path)
-                db.update_scene(scene['id'], video_path=clip_path)
-            else:
-                # Fallback empty canvas if video cannot be found
-                # To wow the user, let's download a generic fallback video or raise error
+            # If download failed or URL was not found, attempt Pexels search fallback with original visual query
+            if not success or not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
+                print(f"Attempting Pexels fallback search with original visual query for Scene {scene['sequence']}...")
+                try:
+                    results = api.search_pexels_videos(scene['visual_query'], orientation=orientation)
+                    if results:
+                        video_url = results[0]['url']
+                        render_progress[project_id] = f"Downloading fallback Pexels video for Scene {scene['sequence']}..."
+                        if api.download_video_clip(video_url, clip_path):
+                            db.update_scene(scene['id'], video_url=video_url, video_source='pexels', video_path=clip_path)
+                            success = True
+                except Exception as pe:
+                    print(f"Pexels fallback failed: {pe}")
+                    
+            # Ultimate fallback to generic abstract background if everything else fails
+            if not success or not os.path.exists(clip_path) or os.path.getsize(clip_path) == 0:
+                print(f"All matching video sources failed. Downloading generic abstract background for Scene {scene['sequence']}...")
                 fallback_results = api.search_pexels_videos("abstract motion background", orientation=orientation)
                 if fallback_results:
                     video_url = fallback_results[0]['url']
                     api.download_video_clip(video_url, clip_path)
                     db.update_scene(scene['id'], video_url=video_url, video_path=clip_path, video_source='pexels')
+                    success = True
                 else:
                     raise ValueError(f"No video clip found for scene {scene['sequence']} ('{scene['visual_query']}')")
+                    
+            # Ensure database records the valid local video path if download succeeded
+            if success and os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
+                db.update_scene(scene['id'], video_path=clip_path)
                     
         # Refresh scenes
         scenes = db.get_scenes(project_id)
@@ -324,8 +404,16 @@ def render_project_worker(project_id):
         all_words = []
         elapsed_audio_time = 0.0
         
+        # Determine voice language
+        if project['voice'].startswith("cvoice:"):
+            voice_lang = "Hindi" if project['voice'].endswith("_hi") else "English"
+        else:
+            voice_lang = "Hindi" if project['voice'].startswith("hi-") else "English"
+            
         for scene in scenes:
-            words = api.transcribe_audio_to_words(scene['voiceover_path'])
+            # Force Whisper to use the correct language to avoid script hallucinations (e.g. Urdu)
+            whisper_lang = "hi" if voice_lang == "Hindi" else "en"
+            words = api.transcribe_audio_to_words(scene['voiceover_path'], language=whisper_lang)
             # Adjust word timestamps to fit the global timeline
             for w in words:
                 w['start'] += elapsed_audio_time
@@ -336,8 +424,14 @@ def render_project_worker(project_id):
             # Using MoviePy to read duration
             from moviepy.editor import AudioFileClip
             audio = AudioFileClip(scene['voiceover_path'])
-            elapsed_audio_time += audio.duration
+            # Add the 0.3s scene pause to keep subtitles synchronized
+            elapsed_audio_time += audio.duration + 0.3
             audio.close()
+            
+        # Transliterate Devanagari words to Hinglish for Hindi audio narration
+        if voice_lang == "Hindi" and all_words:
+            render_progress[project_id] = "Transliterating captions to Romanized Hindi..."
+            all_words = api.transliterate_words_to_hinglish(all_words)
             
         # Write ASS Subtitle File
         render_progress[project_id] = "Generating styled subtitles..."
@@ -351,7 +445,6 @@ def render_project_worker(project_id):
         bg_music_path = None
         if project['bg_music'] != 'none':
             bg_music_path = os.path.join(BG_MUSIC_DIR, project['bg_music'])
-            
         temp_video_path = os.path.join(p_dir, 'temp_video.mp4')
         final_temp_path = engine.assemble_video_pipeline(
             project_id=project_id,
@@ -359,9 +452,9 @@ def render_project_worker(project_id):
             bg_music_path=bg_music_path,
             bg_music_volume=project['bg_music_volume'],
             aspect_ratio=project['aspect_ratio'],
-            dest_output_path=temp_video_path
+            dest_output_path=temp_video_path,
+            target_duration=target_duration
         )
-        
         # Step 5: Burn subtitles using FFmpeg
         render_progress[project_id] = "Burning subtitles onto final video..."
         final_video_path = os.path.join(p_dir, 'final_video.mp4')
@@ -373,7 +466,7 @@ def render_project_worker(project_id):
         except: pass
         
         # Update database status
-        db.update_project(project_id, status='Completed', video_path=final_video_path)
+        db.update_project(project_id, status='Completed', video_path=final_video_path, error_message=None)
         render_progress[project_id] = "Done!"
         
     except Exception as e:
@@ -416,6 +509,49 @@ def get_render_status(project_id):
         'status': project['status'] if project else 'Idle',
         'progress_message': progress_msg,
         'error_message': project.get('error_message') if project else None
+    })
+
+@app.route('/api/projects/<int:project_id>/clear-clips', methods=['POST'])
+def clear_project_clips(project_id):
+    project = db.get_project(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+        
+    p_dir = get_project_dir(project_id)
+    clips_dir = os.path.join(p_dir, 'clips')
+    voiceovers_dir = os.path.join(p_dir, 'voiceovers')
+    
+    deleted_count = 0
+    # Clear clips folder
+    if os.path.exists(clips_dir):
+        for f in os.listdir(clips_dir):
+            fpath = os.path.join(clips_dir, f)
+            try:
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
+                    deleted_count += 1
+            except Exception as e:
+                print(f"Error deleting clip file {fpath}: {e}")
+                
+    # Clear voiceovers folder
+    if os.path.exists(voiceovers_dir):
+        for f in os.listdir(voiceovers_dir):
+            fpath = os.path.join(voiceovers_dir, f)
+            try:
+                if os.path.isfile(fpath):
+                    os.remove(fpath)
+                    deleted_count += 1
+            except Exception as e:
+                print(f"Error deleting voiceover file {fpath}: {e}")
+                
+    # Update scenes in database to reset video_path and voiceover_path
+    scenes = db.get_scenes(project_id)
+    for scene in scenes:
+        db.update_scene(scene['id'], video_path=None, voiceover_path=None)
+        
+    return jsonify({
+        'status': 'success', 
+        'message': f'Cleared temporary media files. Deleted {deleted_count} files.'
     })
 
 # --- STATIC CONTENT ROUTING ---

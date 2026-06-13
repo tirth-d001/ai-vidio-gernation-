@@ -152,7 +152,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
     return ass_template + "\n".join(dialogue_lines)
 
-def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, aspect_ratio, dest_output_path):
+def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, aspect_ratio, dest_output_path, target_duration=None):
     """
     Stitches scenes together, matches voiceover audio, performs cropping/filters,
     adds background music with ducking, and burns in subtitles.
@@ -180,24 +180,39 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
             voice_audio = AudioFileClip(voiceover_path)
             duration = voice_audio.duration
             
+            # Smooth fadeout to prevent abrupt robotic cuts
+            voice_audio = voice_audio.audio_fadeout(0.1)
+            
+            # Add a small natural pause (0.3s) at the end of each scene
+            scene_duration = duration + 0.3
+            
             # Load video clip
             vid_clip = VideoFileClip(video_path)
             
             # Adjust video clip duration
-            if vid_clip.duration < duration:
+            is_youtube = scene.get('video_source') == 'youtube'
+            
+            if vid_clip.duration < scene_duration:
                 # If too short, loop it
-                n_loops = math.ceil(duration / vid_clip.duration)
+                n_loops = math.ceil(scene_duration / vid_clip.duration)
                 # Simple loop concatenation
-                vid_clip = concatenate_videoclips([vid_clip] * n_loops).subclip(0, duration)
+                vid_clip = concatenate_videoclips([vid_clip] * n_loops).subclip(0, scene_duration)
             else:
-                # Trim to match voiceover
-                vid_clip = vid_clip.subclip(0, duration)
+                # Trim to match scene duration
+                if is_youtube:
+                    # Skip first 5 seconds of the video to bypass common YouTube intros, 
+                    # but only if there is enough footage remaining.
+                    start_offset = max(0.0, min(5.0, vid_clip.duration - scene_duration))
+                    vid_clip = vid_clip.subclip(start_offset, start_offset + scene_duration)
+                else:
+                    vid_clip = vid_clip.subclip(0, scene_duration)
                 
             # Apply crop and aspect ratio resize
             vid_clip = crop_to_aspect_ratio(vid_clip, aspect_ratio)
             
-            # Mirror the video to help avoid copyright matches
-            vid_clip = mirror_x(vid_clip)
+            # Mirror the video to help avoid copyright matches (skip for YouTube to keep visuals high-quality)
+            if not is_youtube:
+                vid_clip = mirror_x(vid_clip)
             
             # Mute the original video clip audio completely
             vid_clip = vid_clip.set_audio(None)
@@ -209,7 +224,7 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
             audio_clips.append(voice_audio)
             
             # Track current timeline head
-            current_time += duration
+            current_time += scene_duration
             
         if not video_clips:
             raise ValueError("No valid video scenes to assemble.")
@@ -239,6 +254,25 @@ def assemble_video_pipeline(project_id, scenes, bg_music_path, bg_music_volume, 
             
         final_audio = CompositeAudioClip(final_audio_tracks)
         final_video = final_video.set_audio(final_audio)
+        
+        # 3.5. Adjust total duration to match target_duration exactly (if target_duration is specified)
+        if target_duration:
+            current_dur = final_video.duration
+            # Calculate speed factor
+            speed_factor = current_dur / target_duration
+            # Only apply speed adjustment if it's within a reasonable range (e.g., 0.8x to 1.25x) to avoid distortion
+            if 0.8 <= speed_factor <= 1.25:
+                # To match target_duration, we slow down/speed up by passing speed_factor (current_dur / target_duration) to speedx
+                print(f"Adjusting final video speed to {speed_factor:.2f}x to match target duration of {target_duration}s...")
+                final_video = final_video.speedx(speed_factor)
+            else:
+                # If it's too different, just trim or pad it
+                if current_dur > target_duration:
+                    print(f"Trimming final video from {current_dur:.2f}s to {target_duration}s...")
+                    final_video = final_video.subclip(0, target_duration)
+                else:
+                    print(f"Padding final video from {current_dur:.2f}s to {target_duration}s...")
+                    final_video = final_video.set_duration(target_duration)
         
         # 4. Render intermediate video (without subtitles)
         temp_rendered_path = dest_output_path.replace(".mp4", "_temp.mp4")
